@@ -1,0 +1,15 @@
+{
+  "name": "ar-car-showroom-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Localhost 3D & AR Car Showroom powered by Three.js using the Unity project's 3D vehicle models and Vuforia target images.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "electron desktop/main.cjs"
+  },
+  "dependencies": {
+    "electron": "^41.2.1",
+    "three": "^0.170.0"
+  }
+}
