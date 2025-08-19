@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR Car Showroom — Real Screen 3D &amp; Desktop Overlay</title>
+  <link rel="stylesheet" href="/styles.css?v=7" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.js",
+        "three/addons/": "/vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <video id="ar-video" autoplay playsinline muted></video>
+    <div id="canvas-container"></div>
+
+    <header class="topbar" id="topbar">
+      <div class="brand">
+        <span class="brand-badge">AR</span>
+        <div>
+          <h1>AR Car Showroom</h1>
+          <p id="vehicle-subtitle">Loading showroom assets…</p>
+        </div>
+      </div>
+
+      <nav class="vehicle-tabs" id="vehicle-tabs" aria-label="Vehicle selection"></nav>
+
+      <div class="topbar-actions">
+        <div class="mode-switch" role="group" aria-label="View mode">
+          <button type="button" class="mode-btn active" data-mode="window">Screen 3D</button>
+          <button type="button" class="mode-btn" data-mode="showroom">3D Studio</button>
+          <button type="button" class="mode-btn" data-mode="ar">AR Camera</button>
+        </div>
+        <button type="button" id="btn-fullscreen" class="accent-btn" title="Use your real PC monitor as the 3D window (F)">Fullscreen</button>
+        <button type="button" id="btn-desktop-overlay" class="accent-btn" title="Float 3D car directly over your Windows desktop">Desktop Overlay</button>
+        <button type="button" id="btn-hide-ui" class="ghost-btn" title="Hide UI controls (H)">Hide UI</button>
+        <button type="button" id="btn-target-modal" class="ghost-btn">Target</button>
+        <button type="button" id="btn-demo-modal" class="ghost-btn">Demo</button>
+      </div>
+    </header>
+
+    <button type="button" id="btn-restore-ui" class="restore-ui-btn hidden" title="Show controls (H)">Show Controls (H)</button>
+
+    <div id="ar-banner" class="ar-banner hidden">
+      <span id="ar-status-text">Initializing camera…</span>
+    </div>
+
+    <div id="loading-overlay" class="loading-overlay">
+      <div class="loading-card">
+        <div class="spinner"></div>
+        <h2 id="loading-title">Loading 3D Model…</h2>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <p id="loading-detail">Preparing assets…</p>
+      </div>
+    </div>
+
+    <aside class="control-dock" id="control-dock">
+      <div class="dock-section" id="sky-section">
+        <div class="dock-title">Outside Atmosphere</div>
+        <div class="sky-pills">
+          <button type="button" class="sky-btn active" data-sky="day">Sunny Day</button>
+          <button type="button" class="sky-btn" data-sky="sunset">Golden Hour</button>
+          <button type="button" class="sky-btn" data-sky="night">Night Plaza</button>
+        </div>
+      </div>
+
+      <div class="dock-section">
+        <div class="dock-title">Clearcoat Paint Finish</div>
+        <div class="paint-swatches" id="paint-swatches">
+          <button type="button" class="paint-btn active" data-paint="original" title="Original Factory Finish">Orig</button>
+          <button type="button" class="paint-btn" data-paint="#111418" style="--swatch:#111418" title="Obsidian Black"></button>
+          <button type="button" class="paint-btn" data-paint="#c7cdd6" style="--swatch:#c7cdd6" title="Liquid Silver"></button>
+          <button type="button" class="paint-btn" data-paint="#0f3d2e" style="--swatch:#0f3d2e" title="British Racing Green"></button>
+          <button type="button" class="paint-btn" data-paint="#13294b" style="--swatch:#13294b" title="Midnight Sapphire"></button>
+          <button type="button" class="paint-btn" data-paint="#7f1d1d" style="--swatch:#7f1d1d" title="Crimson Metallic"></button>
+        </div>
+      </div>
+
+      <div class="dock-section">
+        <div class="dock-title">3D Screen Controls</div>
+        <div class="toggle-grid">
+          <button type="button" id="toggle-parallax" class="ctrl-btn active">3D Eye Parallax</button>
+          <button type="button" id="toggle-rotate" class="ctrl-btn">Auto Rotate</button>
+          <button type="button" id="toggle-target" class="ctrl-btn">AR Target Mat</button>
+          <button type="button" id="toggle-grid" class="ctrl-btn">Studio Grid</button>
+          <button type="button" id="toggle-wireframe" class="ctrl-btn">Wireframe</button>
+          <button type="button" id="btn-drive-out" class="ctrl-btn">Drive Out</button>
+        </div>
+      </div>
+
+      <div class="dock-section">
+        <label class="slider-label" for="popout-slider">
+          <span>Come Out Distance</span>
+          <span id="popout-value">1.35m</span>
+        </label>
+        <input id="popout-slider" type="range" min="-0.8" max="2.4" step="0.05" value="1.35" />
+      </div>
+
+      <div class="dock-section">
+        <label class="slider-label" for="scale-slider">
+          <span>Model Scale</span>
+          <span id="scale-value">1.00×</span>
+        </label>
+        <input id="scale-slider" type="range" min="0.4" max="1.6" step="0.05" value="1.0" />
+      </div>
+
+      <div class="dock-section dock-footer">
+        <div id="model-stats" class="model-stats">Press F for Fullscreen · Move mouse for 3D depth</div>
+        <button type="button" id="btn-reset-camera" class="primary-btn">Reset Camera</button>
+      </div>
+    </aside>
+
+    <!-- Compact floating pill bar for Transparent Desktop Overlay (?desktop=1) -->
+    <div id="desktop-bar" class="desktop-bar hidden">
+      <div id="desktop-vehicle-tabs" class="desktop-tabs"></div>
+      <div class="desktop-divider"></div>
+      <button type="button" id="desktop-drive-out" class="ghost-btn">Drive Out</button>
+      <button type="button" id="desktop-rotate" class="ghost-btn">Rotate</button>
+      <button type="button" id="desktop-scale-down" class="ghost-btn">−</button>
+      <button type="button" id="desktop-scale-up" class="ghost-btn">+</button>
+      <button type="button" id="desktop-clickthrough" class="ghost-btn" title="Shortcut: Ctrl+Shift+C">Click-Through</button>
+      <button type="button" id="desktop-exit" class="danger-btn" title="Press Esc to exit">Exit (Esc)</button>
+    </div>
+
+    <div id="modal-target" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="target-modal-title">
+      <div class="modal-backdrop" data-close-modal="modal-target"></div>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="target-modal-title">Vuforia Reference Image Target</h2>
+          <button type="button" class="close-btn" data-close-modal="modal-target">&times;</button>
+        </div>
+        <div class="modal-body">
+          <img id="target-preview-img" src="" alt="Vuforia image target" />
+          <p id="target-preview-meta" class="modal-meta"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-demo" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="demo-modal-title">
+      <div class="modal-backdrop" data-close-modal="modal-demo"></div>
+      <div class="modal-card modal-card-wide">
+        <div class="modal-header">
+          <h2 id="demo-modal-title">Original Unity + Vuforia Demo</h2>
+          <button type="button" class="close-btn" data-close-modal="modal-demo">&times;</button>
+        </div>
+        <div class="modal-body">
+          <video id="demo-video-player" controls preload="metadata" src="/demo/AR-Car-Showroom-Demo.mp4"></video>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js?v=7"></script>
+</body>
+</html>
