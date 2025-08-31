@@ -5,6 +5,18 @@ const TARGET_URL = process.env.SHOWROOM_URL || 'http://127.0.0.1:3000/?desktop=1
 let mainWin = null;
 let clickThrough = false;
 
+const gotSingleLock = app.requestSingleInstanceLock();
+if (!gotSingleLock) {
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  if (mainWin && !mainWin.isDestroyed()) {
+    if (mainWin.isMinimized()) mainWin.restore();
+    mainWin.focus();
+  }
+});
+
 function createOverlayWindow() {
   const display = screen.getPrimaryDisplay();
   const { x, y, width, height } = display.bounds;
@@ -30,6 +42,14 @@ function createOverlayWindow() {
 
   mainWin.setAlwaysOnTop(true, 'screen-saver');
   mainWin.loadURL(TARGET_URL);
+
+  mainWin.webContents.on('did-fail-load', () => {
+    setTimeout(() => {
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.loadURL(TARGET_URL);
+      }
+    }, 1000);
+  });
 
   mainWin.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
