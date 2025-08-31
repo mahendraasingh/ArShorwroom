@@ -685,7 +685,7 @@ function clearGroup(group) {
   }
 }
 
-function buildTargetPlate(vehicle) {
+function buildTargetPlate(vehicle, token) {
   clearGroup(targetGroup);
   const w = vehicle.targetSize?.width || 0.2;
   const h = vehicle.targetSize?.height || 0.3;
@@ -694,6 +694,10 @@ function buildTargetPlate(vehicle) {
   const plateDepth = plateWidth * aspect;
 
   textureLoader.load(vehicle.targetImageUrl, (tex) => {
+    if (token !== state.loadToken) {
+      tex.dispose();
+      return;
+    }
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
@@ -1090,7 +1094,7 @@ async function loadVehicle(vehicle) {
   document.getElementById('target-preview-meta').textContent =
     `Target "${vehicle.targetName}" (${vehicle.targetSize.width.toFixed(3)} m × ${vehicle.targetSize.height.toFixed(3)} m) from Assets/StreamingAssets/Vuforia/ARCarTargets.xml`;
 
-  buildTargetPlate(vehicle);
+  buildTargetPlate(vehicle, token);
   clearCarModel();
   contactShadowMesh.visible = false;
 
@@ -1169,10 +1173,12 @@ async function setMode(mode) {
   const isAR = mode === 'ar';
 
   outdoorGroup.visible = isWindow;
+  headlightGroup.visible = isWindow || isDesktop;
   skySection.classList.toggle('hidden', !isWindow);
   topbarEl.classList.toggle('hidden', isDesktop || state.uiHidden);
   controlDockEl.classList.toggle('hidden', isDesktop || state.uiHidden);
   desktopBarEl.classList.toggle('hidden', !isDesktop);
+  camera.updateProjectionMatrix();
 
   if (isDesktop) {
     gridHelper.visible = false;
@@ -1349,20 +1355,26 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Desktop overlay pill bar actions
+const desktopRotateBtn = document.getElementById('desktop-rotate');
 document.getElementById('desktop-drive-out').addEventListener('click', triggerDriveOutAnimation);
-document.getElementById('desktop-rotate').addEventListener('click', () => {
+desktopRotateBtn.addEventListener('click', () => {
   state.autoRotate = !state.autoRotate;
   controls.autoRotate = state.autoRotate;
+  toggleRotateBtn.classList.toggle('active', state.autoRotate);
+  desktopRotateBtn.classList.toggle('active', state.autoRotate);
 });
-document.getElementById('desktop-scale-down').addEventListener('click', () => {
-  state.userScale = Math.max(0.4, +(state.userScale - 0.1).toFixed(2));
+function setUserScale(nextScale) {
+  state.userScale = Math.max(0.4, Math.min(1.6, Number(nextScale.toFixed(2))));
+  scaleSlider.value = state.userScale.toFixed(2);
+  scaleValueEl.textContent = `${state.userScale.toFixed(2)}×`;
   carRoot.scale.setScalar(state.userScale);
   updateCarPlacement();
+}
+document.getElementById('desktop-scale-down').addEventListener('click', () => {
+  setUserScale(state.userScale - 0.1);
 });
 document.getElementById('desktop-scale-up').addEventListener('click', () => {
-  state.userScale = Math.min(1.6, +(state.userScale + 0.1).toFixed(2));
-  carRoot.scale.setScalar(state.userScale);
-  updateCarPlacement();
+  setUserScale(state.userScale + 0.1);
 });
 document.getElementById('desktop-clickthrough').addEventListener('click', () => {
   window.desktopOverlay?.setClickThrough(true);
@@ -1461,28 +1473,35 @@ function animate() {
 async function init() {
   setMode(IS_DESKTOP_OVERLAY ? 'desktop' : 'window');
   animate();
-  const res = await fetch('/api/vehicles');
-  const data = await res.json();
-  state.vehicles = data.vehicles || [];
+  try {
+    const res = await fetch('/api/vehicles');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.vehicles = data.vehicles || [];
 
-  vehicleTabsEl.innerHTML = '';
-  desktopTabsEl.innerHTML = '';
-  for (const vehicle of state.vehicles) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'vehicle-tab';
-    btn.dataset.id = vehicle.id;
-    btn.textContent = vehicle.name;
-    btn.addEventListener('click', () => loadVehicle(vehicle));
-    vehicleTabsEl.appendChild(btn);
+    vehicleTabsEl.innerHTML = '';
+    desktopTabsEl.innerHTML = '';
+    for (const vehicle of state.vehicles) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vehicle-tab';
+      btn.dataset.id = vehicle.id;
+      btn.textContent = vehicle.name;
+      btn.addEventListener('click', () => loadVehicle(vehicle));
+      vehicleTabsEl.appendChild(btn);
 
-    const dBtn = btn.cloneNode(true);
-    dBtn.addEventListener('click', () => loadVehicle(vehicle));
-    desktopTabsEl.appendChild(dBtn);
-  }
+      const dBtn = btn.cloneNode(true);
+      dBtn.addEventListener('click', () => loadVehicle(vehicle));
+      desktopTabsEl.appendChild(dBtn);
+    }
 
-  if (state.vehicles.length > 0) {
-    await loadVehicle(state.vehicles[0]);
+    if (state.vehicles.length > 0) {
+      await loadVehicle(state.vehicles[0]);
+    }
+  } catch (err) {
+    console.error('Failed to initialize showroom:', err);
+    subtitleEl.textContent = 'Could not load vehicle catalog.';
+    setLoading(false);
   }
 }
 
