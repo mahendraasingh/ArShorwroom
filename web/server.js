@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import electronPath from 'electron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,7 +117,32 @@ function sendJson(res, statusCode, payload) {
   res.end(body);
 }
 
+let desktopChild = null;
+
+function pipeFileStream(req, res, filePath, options) {
+  const stream = fs.createReadStream(filePath, options);
+  const cleanup = () => {
+    if (!stream.destroyed) stream.destroy();
+  };
+  res.on('close', cleanup);
+  stream.on('error', (streamErr) => {
+    cleanup();
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: streamErr?.message || 'Read error' });
+    } else {
+      res.end();
+    }
+  });
+  stream.pipe(res);
+}
+
 function serveFile(req, res, filePath, baseDir) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD', 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
   if (!isInsideDir(filePath, baseDir)) {
     sendJson(res, 403, { error: 'Forbidden' });
     return;
@@ -135,6 +159,11 @@ function serveFile(req, res, filePath, baseDir) {
     const range = req.headers.range;
 
     if (range) {
+      if (stats.size === 0) {
+        res.writeHead(416, { 'Content-Range': 'bytes */0' });
+        res.end();
+        return;
+      }
       const match = /^bytes=(\d*)-(\d*)$/.exec(range);
       if (!match) {
         res.writeHead(416, { 'Content-Range': `bytes */${stats.size}` });
@@ -155,7 +184,11 @@ function serveFile(req, res, filePath, baseDir) {
         'Content-Length': end - start + 1,
         'Content-Type': contentType,
       });
-      fs.createReadStream(filePath, { start, end }).pipe(res);
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      pipeFileStream(req, res, filePath, { start, end });
       return;
     }
 
@@ -170,11 +203,16 @@ function serveFile(req, res, filePath, baseDir) {
       res.end();
       return;
     }
-    fs.createReadStream(filePath).pipe(res);
+    pipeFileStream(req, res, filePath);
   });
 }
 
-const server = http.createServer((req, res) => {
+async function resolveElectronBinary() {
+  const { default: electronBinary } = await import('electron');
+  return electronBinary;
+}
+
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   let pathname;
   try {
@@ -196,8 +234,13 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/launch-desktop' && req.method === 'POST') {
     try {
+      if (desktopChild && !desktopChild.killed && desktopChild.exitCode === null) {
+        sendJson(res, 200, { ok: true, pid: desktopChild.pid, alreadyRunning: true });
+        return;
+      }
+      const electronBinary = await resolveElectronBinary();
       const child = spawn(
-        electronPath,
+        electronBinary,
         [path.join(__dirname, 'desktop', 'main.cjs')],
         {
           cwd: __dirname,
@@ -209,6 +252,10 @@ const server = http.createServer((req, res) => {
           },
         }
       );
+      desktopChild = child;
+      child.once('exit', () => {
+        if (desktopChild === child) desktopChild = null;
+      });
       child.unref();
       sendJson(res, 200, { ok: true, pid: child.pid });
     } catch (err) {
